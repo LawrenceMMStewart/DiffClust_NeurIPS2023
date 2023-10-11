@@ -2,10 +2,11 @@
 
 Contains the code to reproduce the experiments of:
 
-*Differentiable Clustering with Perturbed Random Forests*, Advances in Neural Information Processing Systems. 
+**Differentiable Clustering with Perturbed Random Forests**, *Advances in Neural Information Processing Systems 2023.*. 
 
-<img src="https://github.com/LawrenceMMStewart/DiffClust_NeurIPS2023/blob/main/images/model-neurips.pdf" width="750">
+<!-- <img src="https://github.com/LawrenceMMStewart/DiffClust_NeurIPS2023/blob/main/images/model-neurips.pdf" width="750"> -->
 
+![](./images/model-neurips.jpg)
 
 [Link to paper on ArXiV](https://arxiv.org/abs/2305.16358)
 
