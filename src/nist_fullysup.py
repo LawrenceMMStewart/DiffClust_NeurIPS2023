@@ -137,7 +137,7 @@ def load_model(config : ml_collections.ConfigDict, name : str, handler):
     dummy_state = create_state(rngs=rngs, backbone=backbone, optimizer=opt,
                                dshape=handler.dshape, sigma=config.sigma, num_samples=config.num_samples,
                                exp_temp=config.exp_temp, decorrelate_noise=config.decorrelate_noise,
-                               bs=config.clust_bs, cosine_distance=config.cosine_distance, use_bias=config.use_bias)
+                               bs=config.bs, cosine_distance=config.cosine_distance, use_bias=config.use_bias)
     dummy_ckpt = {
         'state' : dummy_state,
         'config' : dict(config),
@@ -189,7 +189,7 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
     backbone = get_backbone(config)
     state = create_state(rngs=rngs, backbone=backbone, optimizer=opt, dshape=handler.dshape, sigma=config.sigma,
                                num_samples=config.num_samples, exp_temp=config.exp_temp, cosine_distance=config.cosine_distance,
-                               decorrelate_noise=config.decorrelate_noise, bs=config.clust_bs, use_bias=config.use_bias)
+                               decorrelate_noise=config.decorrelate_noise, bs=config.bs, use_bias=config.use_bias)
 
 
     rngs = utils.fold_in_key(rngs, -1, 'params')
@@ -212,6 +212,10 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         if improvements[h] and config.save:
             save_model(step=0, name=h, config=config, state=state)
 
+    config.stopped=-1
+    stopping_count = 0
+    max_count = config.early_stopping if config.early_stopping > 0 else np.inf
+
 
     for step in range(1, config.steps + 1):
 
@@ -224,19 +228,47 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
 
         metrics.store(step, updates={k + '_train' : v.item() for (k, v) in outs.items()})
 
-
-    # else checkpoint
         if step % config.eval_every == 0:
             outs = eval_step(state, handler, rngs)
+
             improvements = metrics.update(step=step, updates={k + '_eval' : v.item() for (k, v) in outs.items()})
             metrics.write_scalar_values(step=step, writer=writer, save=config.save)
             for h in config.save_hooks:
                 if improvements[h] and config.save:
                     save_model(step=0, name=h, config=config, state=state)
-        if step == config.steps:
+
+            if np.any([improvements[k] for k in improvements.keys() if k in config.save_hooks]):
+                stopping_count = 0
+            else:
+                stopping_count +=1
+
+        if stopping_count == max_count:
+            print(f"Early stopping on step {step}")
+            config.stopped=step
+            save_model(step=step, name='last', config=config, state=state)
+            return metrics, config
+
+        elif step == config.steps:
             save_model(step=step, name='last', config=config, state=state)
 
     return metrics, config
+
+
+
+
+
+#     # else checkpoint
+#         if step % config.eval_every == 0:
+#             outs = eval_step(state, handler, rngs)
+#             improvements = metrics.update(step=step, updates={k + '_eval' : v.item() for (k, v) in outs.items()})
+#             metrics.write_scalar_values(step=step, writer=writer, save=config.save)
+#             for h in config.save_hooks:
+#                 if improvements[h] and config.save:
+#                     save_model(step=0, name=h, config=config, state=state)
+#         if step == config.steps:
+#             save_model(step=step, name='last', config=config, state=state)
+
+#     return metrics, config
 
 
 def test(config, writer, handler):
@@ -378,9 +410,11 @@ if __name__ == "__main__":
 
     parser.add_argument('--reshuffle', default=True, type=bool, help="keep the same batches at each epoch, do not reshuffle data")
 
-    parser.add_argument('--clust_bs', default=64, type=int, help='Batch size to use for clustering')
+    parser.add_argument('--bs', default=64, type=int, help='Batch size to use for clustering')
 
     parser.add_argument('--testval_bs', default=64, type=int, help='Batch size for the validation and test data (no affect on classif).')
+
+    parser.add_argument('--early_stopping', default=-1, type=int, help='If positive, stop after this number of non-hook improvements.')
 
     args = parser.parse_args()
     config = ml_collections.ConfigDict(vars(args))
@@ -391,7 +425,7 @@ if __name__ == "__main__":
 
     # load dataset
     handler = NISTClustSupervised(dataset=config.dataset,
-                                  bs=config.clust_bs,
+                                  bs=config.bs,
                                   testval_bs=config.testval_bs,
                                   reshuffle=config.reshuffle,
                                   backbone=config.backbone)

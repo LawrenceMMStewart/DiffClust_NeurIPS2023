@@ -208,6 +208,11 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
             save_model(step=0, name=h, config=config, state=state)
 
 
+    config.stopped=-1
+    stopping_count = 0
+    max_count = config.early_stopping if config.early_stopping > 0 else np.inf
+
+
     for step in range(1, config.steps + 1):
 
         # update the rng for dropout and noise
@@ -221,6 +226,8 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         metrics.store(step, updates={k + '_train' : v.item() for (k, v) in outs.items()})
 
 
+
+
     # else checkpoint
         if step % config.eval_every == 0:
             outs = eval_step(state, handler, rngs)
@@ -230,8 +237,35 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
             for h in config.save_hooks:
                 if improvements[h] and config.save:
                     save_model(step=0, name=h, config=config, state=state)
-        if step == config.steps:
+
+
+            if np.any([improvements[k] for k in improvements.keys() if k in config.save_hooks]):
+                stopping_count = 0
+            else:
+                stopping_count +=1
+
+
+        if stopping_count == max_count:
+            print(f"Early stopping on step {step}")
+            config.stopped=step
             save_model(step=step, name='last', config=config, state=state)
+            return metrics, config
+
+        elif step == config.steps:
+            save_model(step=step, name='last', config=config, state=state)
+
+
+#     # else checkpoint
+#         if step % config.eval_every == 0:
+#             outs = eval_step(state, handler, rngs)
+
+#             improvements = metrics.update(step=step, updates={k + '_eval' : v.item() for (k, v) in outs.items()})
+#             metrics.write_scalar_values(step=step, writer=writer, save=config.save)
+#             for h in config.save_hooks:
+#                 if improvements[h] and config.save:
+#                     save_model(step=0, name=h, config=config, state=state)
+#         if step == config.steps:
+#             save_model(step=step, name='last', config=config, state=state)
 
     return metrics, config
 
@@ -369,6 +403,8 @@ if __name__ == "__main__":
     parser.add_argument('--bs', default=64, type=int, help='Batch size to use for clustering')
 
     parser.add_argument('--testval_bs', default=64, type=int, help='Batch size for the validation and test data (no affect on classif).')
+
+    parser.add_argument('--early_stopping', default=-1, type=int, help='If positive, stop after this number of non-hook improvements.')
 
     args = parser.parse_args()
     config = ml_collections.ConfigDict(vars(args))

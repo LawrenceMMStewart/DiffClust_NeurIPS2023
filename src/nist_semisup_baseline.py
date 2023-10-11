@@ -77,18 +77,12 @@ def eval_step_fn(state, X, Yhot, rngs):
     ce, outs = state.apply_fn({'params' : state.params}, X, Yhot, training=False, rngs=rngs)
     return outs
 
+
 def eval_step(state, handler, rngs):
     # for this experiment the evaluation is done batch-wise
-    X, Yhot = handler.next_val()
+    (X, Yhot) = handler.next_val()
     return eval_step_fn(state, X, Yhot, rngs)
 
-
-
-# def eval_step(state, handler, rngs):
-#     # for this experiment the evaluation is done batch-wise
-#     X, Yhot = handler.batched_valset
-#     outs = jax.vmap(eval_step_fn, in_axes=(None, 0, 0, None, None))(state, X, Yhot, 10, rngs)
-#     return {k : v.mean() for (k, v) in outs.items()}
 
 
 
@@ -202,6 +196,13 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         if improvements[h] and config.save:
             save_model(step=0, name=h, config=config, state=state)
 
+    config.stopped=-1
+    stopping_count = 0
+    max_count = config.early_stopping if config.early_stopping > 0 else np.inf
+
+
+
+
 
     for step in range(1, config.steps + 1):
 
@@ -209,22 +210,27 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         rngs = utils.fold_in_key(rngs, step, 'dropout')
         rngs = utils.fold_in_key(rngs, step, 'noise')
 
-        X, Yhot = handler.next_train()
+        X, Yhot = handler.next_labeled()
         state, outs, grads = train_step_fn(state, X, Yhot, rngs)
 
         metrics.store(step, updates={k + '_train' : v.item() for (k, v) in outs.items()})
 
 
-    # else checkpoint
         if step % config.eval_every == 0:
             outs = eval_step(state, handler, rngs)
+
             improvements = metrics.update(step=step, updates={k + '_eval' : v.item() for (k, v) in outs.items()})
             metrics.write_scalar_values(step=step, writer=writer, save=config.save)
             for h in config.save_hooks:
                 if improvements[h] and config.save:
                     save_model(step=0, name=h, config=config, state=state)
-        if step == config.steps:
-            save_model(step=step, name='last', config=config, state=state)
+
+
+            if np.any([improvements[k] for k in improvements.keys() if k in config.save_hooks]):
+                stopping_count = 0
+            else:
+                stopping_count +=1
+
 
     return metrics, config
 
@@ -367,7 +373,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--path', type=str, default='ss_mnist/exp', help='name for save dir')
 
-    parser.add_argument('--backbone', default='MLP', type=str, help='backbone for diff clust model')
+    parser.add_argument('--backbone', default='CNN', type=str, help='backbone for diff clust model')
 
     parser.add_argument('--embedding_dim', default=256, type=int, help="Dimension of the embedding space.")
 
@@ -377,15 +383,15 @@ if __name__ == "__main__":
 
     parser.add_argument('--reshuffle', default=True, type=bool, help="keep the same batches at each epoch, do not reshuffle data")
 
-    parser.add_argument('--clust_bs', default=64, type=int, help='Batch size to use for clustering')
-
-    parser.add_argument('--lbs', default=32, type=int, help='Number of labeled points in batch')
+    parser.add_argument('--bs', default=64, type=int, help='Batch size to use for clustering')
 
     parser.add_argument('--K', default=0, type=int, help='Number of labels to leave out.')
 
     parser.add_argument('--N_labeled', default=100, type=int, help='Number of labels in train set.')
 
     parser.add_argument('--testval_bs', default=64, type=int, help='Batch size for the validation and test data (no affect on classif).')
+
+    parser.add_argument('--early_stopping', default=-1, type=int, help='If positive, stop after this number of non-hook improvements.')
 
     args = parser.parse_args()
     config = ml_collections.ConfigDict(vars(args))
@@ -396,8 +402,9 @@ if __name__ == "__main__":
 
     # load dataset
     handler = NISTClustSemiSupervised(dataset=config.dataset,
-                                      bs=config.clust_bs,
-                                      lbs=config.lbs,
+                                      bs=config.bs,
+                                      lbs=config.bs,
+                                      ubs=1,
                                       K=config.K,
                                       N_labeled=config.N_labeled,
                                       testval_bs=config.testval_bs,

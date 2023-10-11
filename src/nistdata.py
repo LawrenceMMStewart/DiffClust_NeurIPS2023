@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from typing import Dict, Tuple
 from dataclasses import dataclass
 import tensorflow as tf
+from typing import Union
 import tensorflow_datasets as tfds
 tf.config.set_visible_devices([], device_type='GPU')
 
@@ -161,12 +162,15 @@ class NISTClustSemiSupervised:
     N_labeled : int = 100
     lbs : int = 32
     K : int = 0
+    ubs : Union[int, None]  = None
 
     def __post_init__(self):
         super().__init__()
 
-        assert self.lbs < self.bs
-        self.ubs = self.bs - self.lbs
+        assert self.lbs <= self.bs
+        if self.ubs is None:
+            self.ubs = self.bs - self.lbs
+
 
         if self.backbone == "CNN":
             self.dshape = (28, 28, 1)
@@ -228,6 +232,17 @@ class NISTClustSemiSupervised:
             idsu, (xu, yu) = next(self.uds_iterator)
         ids, (x, y) = fuse(xl, yl, idsl, xu, yu, idsu)
         return process_nist_masked_batch(self.dshape, x, y, ids, self.mask)
+
+
+
+    def next_labeled(self):
+        try:
+            idsl, (xl, yl) = next(self.lds_iterator)
+        except StopIteration:
+            self.lds_iterator = iter(tfds.as_numpy(self.lds))
+            idsl, (xl, yl) = next(self.lds_iterator)
+        x, yhot = process_nist_batch(self.dshape, xl, yl)
+        return x, yhot
 
 
     def next_val(self):

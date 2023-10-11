@@ -145,7 +145,7 @@ def load_model(config : ml_collections.ConfigDict, name : str, handler):
     dummy_state = create_state(rngs=rngs, backbone=backbone, optimizer=opt,
                                dshape=handler.dshape, sigma=config.sigma, num_samples=config.num_samples,
                                exp_temp=config.exp_temp, decorrelate_noise=config.decorrelate_noise,
-                               bs=config.clust_bs, cosine_distance=config.cosine_distance, use_bias=config.use_bias)
+                               bs=config.bs, cosine_distance=config.cosine_distance, use_bias=config.use_bias)
     dummy_ckpt = {
         'state' : dummy_state,
         'config' : dict(config),
@@ -197,7 +197,7 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
     backbone = get_backbone(config)
     state = create_state(rngs=rngs, backbone=backbone, optimizer=opt, dshape=handler.dshape, sigma=config.sigma,
                                num_samples=config.num_samples, exp_temp=config.exp_temp, cosine_distance=config.cosine_distance,
-                               decorrelate_noise=config.decorrelate_noise, bs=config.clust_bs, use_bias=config.use_bias)
+                               decorrelate_noise=config.decorrelate_noise, bs=config.bs, use_bias=config.use_bias)
 
 
     rngs = utils.fold_in_key(rngs, -1, 'params')
@@ -389,7 +389,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--reshuffle', default=True, type=bool, help="keep the same batches at each epoch, do not reshuffle data")
 
-    parser.add_argument('--clust_bs', default=64, type=int, help='Batch size to use for clustering')
+    parser.add_argument('--bs', default=64, type=int, help='Batch size to use for clustering')
 
     parser.add_argument('--lbs', default=32, type=int, help='Number of labeled points in batch')
 
@@ -398,6 +398,8 @@ if __name__ == "__main__":
     parser.add_argument('--N_labeled', default=100, type=int, help='Number of labels in train set.')
 
     parser.add_argument('--testval_bs', default=64, type=int, help='Batch size for the validation and test data (no affect on classif).')
+
+    parser.add_argument('--early_stopping', default=-1, type=int, help='If positive, stop after this number of non-hook improvements.')
 
     args = parser.parse_args()
     config = ml_collections.ConfigDict(vars(args))
@@ -408,7 +410,7 @@ if __name__ == "__main__":
 
     # load dataset
     handler = NISTClustSemiSupervised(dataset=config.dataset,
-                                      bs=config.clust_bs,
+                                      bs=config.bs,
                                       lbs=config.lbs,
                                       K=config.K,
                                       N_labeled=config.N_labeled,

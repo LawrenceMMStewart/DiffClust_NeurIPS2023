@@ -82,17 +82,9 @@ def eval_step_fn(state, X, Yhot, rngs):
     return outs
 
 def eval_step(state, handler, rngs):
-    # for this experiment the evaluation is done batch-wise
+    # cross entropy and error on validation set
     (X, Yhot) = handler.next_val()
     return eval_step_fn(state, X, Yhot, rngs)
-
-
-
-# def eval_step(state, handler, rngs):
-#     # for this experiment the evaluation is done batch-wise
-#     X, Yhot = handler.batched_valset
-#     outs = jax.vmap(eval_step_fn, in_axes=(None, 0, 0, None, None))(state, X, Yhot, 10, rngs)
-#     return {k : v.mean() for (k, v) in outs.items()}
 
 
 
@@ -410,7 +402,7 @@ if __name__ == "__main__":
                                          N_labeled=config.N_labeled,
                                          K=config.K,
                                          lbs=config.bs,
-                                         ubs=-1
+                                         ubs=1
                                         )
 
 

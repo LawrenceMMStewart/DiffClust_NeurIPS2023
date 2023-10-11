@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--path', type=str, default='ss_mnist/exp', help='name for save dir')
 
-    parser.add_argument('--backbone', default='MLP', type=str, help='backbone for diff clust model')
+    parser.add_argument('--backbone', default='CNN', type=str, help='backbone for diff clust model')
 
     parser.add_argument('--embedding_dim', default=256, type=int, help="Dimension of the embedding space.")
 

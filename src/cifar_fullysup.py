@@ -226,6 +226,10 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         if improvements[h] and config.save:
             save_model(step=0, name=h, config=config, state=state)
 
+    config.stopped=-1
+    stopping_count = 0
+    max_count = config.early_stopping if config.early_stopping > 0 else np.inf
+
 
     for step in range(1, config.steps + 1):
 
@@ -240,7 +244,7 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
         metrics.store(step, updates={k + '_train' : v.item() for (k, v) in outs.items()})
 
 
-    # else checkpoint
+
         if step % config.eval_every == 0:
             outs = evaltest(state, handler, rngs, dset='val')
 
@@ -249,8 +253,34 @@ def train(config : ml_collections.ConfigDict, writer : metric_writers.SummaryWri
             for h in config.save_hooks:
                 if improvements[h] and config.save:
                     save_model(step=0, name=h, config=config, state=state)
-        if step == config.steps:
+
+            if np.any([improvements[k] for k in improvements.keys() if k in config.save_hooks]):
+                stopping_count = 0
+            else:
+                stopping_count +=1
+
+        if stopping_count == max_count:
+            print(f"Early stopping on step {step}")
+            config.stopped=step
             save_model(step=step, name='last', config=config, state=state)
+            return metrics, config
+
+        elif step == config.steps:
+            save_model(step=step, name='last', config=config, state=state)
+
+
+
+    # # else checkpoint
+    #     if step % config.eval_every == 0:
+    #         outs = evaltest(state, handler, rngs, dset='val')
+
+    #         improvements = metrics.update(step=step, updates={k + '_eval' : v.item() for (k, v) in outs.items()})
+    #         metrics.write_scalar_values(step=step, writer=writer, save=config.save)
+    #         for h in config.save_hooks:
+    #             if improvements[h] and config.save:
+    #                 save_model(step=0, name=h, config=config, state=state)
+    #     if step == config.steps:
+    #         save_model(step=step, name='last', config=config, state=state)
 
     return metrics, config
 
@@ -385,7 +415,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--path', type=str, default='ss_mnist/exp', help='name for save dir')
 
-    parser.add_argument('--backbone', default='MLP', type=str, help='backbone for diff clust model')
+    parser.add_argument('--backbone', default='ResNet50', type=str, help='backbone for diff clust model')
 
     parser.add_argument('--embedding_dim', default=256, type=int, help="Dimension of the embedding space.")
 
@@ -399,6 +429,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--testval_bs', default=64, type=int, help='Batch size for the validation and test data (no affect on classif).')
 
+    parser.add_argument('--early_stopping', default=-1, type=int, help='If positive, stop after this number of non-hook improvements.')
+
 
     args = parser.parse_args()
     config = ml_collections.ConfigDict(vars(args))
@@ -408,7 +440,10 @@ if __name__ == "__main__":
     writer = metric_writers.create_default_writer(logdir=config.path) if config.save else None
 
     # load dataset
-    handler = CIFAR10ClustSupervised(bs=config.bs, testval_bs=config.testval_bs, reshuffle=config.reshuffle, backbone=config.backbone)
+    handler = CIFAR10ClustSupervised(bs=config.bs,
+                                     testval_bs=config.testval_bs,
+                                     reshuffle=config.reshuffle,
+                                     backbone=config.backbone)
 
 
     # training
